@@ -96,7 +96,10 @@ var xRayAfterSendHandler = request.NamedHandler{
 		if curseg != nil && curseg.Name == "attempt" {
 			// An error could have prevented the connect subsegment from closing,
 			// so clean it up here.
-			for _, subsegment := range curseg.rawSubsegments {
+			curseg.mu.RLock()
+			s := curseg.rawSubsegments
+			curseg.mu.RUnlock()
+			for _, subsegment := range s {
 				if subsegment.Name == "connect" && subsegment.safeInProgress() {
 					subsegment.Close(nil)
 					return
@@ -203,7 +206,7 @@ func xrayCompleteHandler(filename string) request.NamedHandler {
 
 			opseg := curseg
 
-			opseg.Lock()
+			opseg.mu.Lock()
 			for k, v := range extractRequestParameters(r, whitelist) {
 				opseg.GetAWS()[strings.ToLower(addUnderScoreBetweenWords(k))] = v
 			}
@@ -229,7 +232,7 @@ func xrayCompleteHandler(filename string) request.NamedHandler {
 				opseg.Throttle = true
 			}
 
-			opseg.Unlock()
+			opseg.mu.Unlock()
 			opseg.Close(r.Error)
 		},
 	}

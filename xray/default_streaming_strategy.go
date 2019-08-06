@@ -69,7 +69,7 @@ func (dSS *DefaultStreamingStrategy) StreamCompletedSubsegments(seg *Segment) []
 		atomic.AddUint32(&seg.ParentSegment.totalSubSegments, ^uint32(0))
 
 		// Add extra information into child subsegment
-		child.Lock()
+		child.mu.Lock()
 		child.beforeEmitSubsegment(seg)
 		cb, err:= json.Marshal(child)
 		if err!= nil{
@@ -77,7 +77,7 @@ func (dSS *DefaultStreamingStrategy) StreamCompletedSubsegments(seg *Segment) []
 		}
 		outSegments = append(outSegments, cb)
 		logger.Debugf("Streaming subsegment named '%s' from segment tree.", child.Name)
-		child.Unlock()
+		child.mu.Unlock()
 
 		break
 	}

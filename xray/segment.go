@@ -59,8 +59,8 @@ func BeginSegment(ctx context.Context, name string) (context.Context, *Segment) 
 	cfg := GetRecorder(ctx)
 	seg.assignConfiguration(cfg)
 
-	seg.Lock()
-	defer seg.Unlock()
+	seg.mu.Lock()
+	defer seg.mu.Unlock()
 
 	seg.addPlugin(plugins.InstancePluginMetadata)
 	seg.addSDKAndServiceInformation()
@@ -86,8 +86,8 @@ func basicSegment(name string, h *header.Header) *Segment {
 	logger.Debugf("Beginning segment named %s", name)
 	seg.ParentSegment = seg
 
-	seg.Lock()
-	defer seg.Unlock()
+	seg.mu.Lock()
+	defer seg.mu.Unlock()
 
 	seg.Name = name
 	seg.StartTime = float64(time.Now().UnixNano()) / float64(time.Second)
@@ -109,7 +109,7 @@ func basicSegment(name string, h *header.Header) *Segment {
 
 // assignConfiguration assigns value to seg.Configuration
 func (seg *Segment) assignConfiguration(cfg *Config) {
-	seg.Lock()
+	seg.mu.Lock()
 	if cfg == nil {
 		seg.GetConfiguration().ContextMissingStrategy = globalCfg.contextMissingStrategy
 		seg.GetConfiguration().ExceptionFormattingStrategy = globalCfg.exceptionFormattingStrategy
@@ -154,7 +154,7 @@ func (seg *Segment) assignConfiguration(cfg *Config) {
 			seg.GetConfiguration().ServiceVersion = globalCfg.serviceVersion
 		}
 	}
-	seg.Unlock()
+	seg.mu.Unlock()
 }
 
 // BeginSubsegment creates a subsegment for a given name and context.
@@ -184,18 +184,18 @@ func BeginSubsegment(ctx context.Context, name string) (context.Context, *Segmen
 	seg := &Segment{parent: parent}
 	logger.Debugf("Beginning subsegment named %s", name)
 
-	seg.Lock()
-	defer seg.Unlock()
+	seg.mu.Lock()
+	defer seg.mu.Unlock()
 
 	seg.ParentSegment = parent.ParentSegment
 	if seg.ParentSegment != seg && seg.ParentSegment != parent {
 		atomic.AddUint32(&seg.ParentSegment.totalSubSegments, 1)
 	}
 
-	parent.Lock()
+	parent.mu.Lock()
 	parent.rawSubsegments = append(parent.rawSubsegments, seg)
 	parent.openSegments++
-	parent.Unlock()
+	parent.mu.Unlock()
 
 	seg.ID = NewSegmentID()
 	seg.Name = name
@@ -232,7 +232,7 @@ func NewSegmentFromHeader(ctx context.Context, name string, h *header.Header) (c
 
 // Close a segment.
 func (seg *Segment) Close(err error) {
-	seg.Lock()
+	seg.mu.Lock()
 	if seg.parent != nil || seg.Type == "Subsegment" {
 		logger.Debugf("Closing subsegment named %s", seg.Name)
 	} else {
@@ -248,23 +248,23 @@ func (seg *Segment) Close(err error) {
 	s := seg
 	for {
 		if s.flush() {
-			s.Unlock()
+			s.mu.Unlock()
 			break
 		}
 
 		tmp := s.parent
-		s.Unlock()
+		s.mu.Unlock()
 
 		s = tmp
-		s.Lock()
+		s.mu.Lock()
 		s.openSegments--
 	}
 }
 
 // CloseAndStream closes a subsegment and sends it.
 func (subseg *Segment) CloseAndStream(err error) {
-	subseg.Lock()
-	defer subseg.Unlock()
+	subseg.mu.Lock()
+	defer subseg.mu.Unlock()
 
 	if subseg.parent != nil {
 		logger.Debugf("Ending subsegment named: %s", subseg.Name)
@@ -286,7 +286,7 @@ func (subseg *Segment) CloseAndStream(err error) {
 
 // RemoveSubsegment removes a subsegment child from a segment or subsegment.
 func (seg *Segment) RemoveSubsegment(remove *Segment) bool {
-	seg.Lock()
+	seg.mu.Lock()
 	unlock := true
 
 	for i, v := range seg.rawSubsegments {
@@ -297,18 +297,18 @@ func (seg *Segment) RemoveSubsegment(remove *Segment) bool {
 
 			if seg.ParentSegment != seg {
 				seg.openSegments--
-				seg.Unlock()
+				seg.mu.Unlock()
 				unlock = false
 
 				atomic.AddUint32(&seg.ParentSegment.totalSubSegments, ^uint32(0))
 			}
 			if unlock {
-				seg.Unlock()
+				seg.mu.Unlock()
 			}
 			return true
 		}
 	}
-	seg.Unlock()
+	seg.mu.Unlock()
 	return false
 }
 
@@ -321,25 +321,25 @@ func (seg *Segment) emit() {
 }
 
 func (seg *Segment)    handleContextDone() {
-	seg.Lock()
+	seg.mu.Lock()
 	seg.ContextDone = true
 	if !seg.InProgress && !seg.Emitted {
 		s := seg
 		for {
 			if s.flush() {
-				s.Unlock()
+				s.mu.Unlock()
 				break
 			}
 
 			tmp := s.parent
-			s.Unlock()
+			s.mu.Unlock()
 
 			s = tmp
-			s.Lock()
+			s.mu.Lock()
 			s.openSegments--
 		}
 	} else {
-		seg.Unlock()
+		seg.mu.Unlock()
 	}
 }
 
@@ -361,9 +361,9 @@ func (seg *Segment) flush() bool {
 }
 
 func (seg *Segment) safeInProgress() bool {
-	seg.Lock()
+	seg.mu.RLock()
 	b := seg.InProgress
-	seg.Unlock()
+	seg.mu.RUnlock()
 	return b
 }
 
@@ -420,8 +420,8 @@ func (seg *Segment) AddAnnotation(key string, value interface{}) error {
 		return fmt.Errorf("failed to add annotation key: %q value: %q to subsegment %q. value must be of type string, number or boolean", key, value, seg.Name)
 	}
 
-	seg.Lock()
-	defer seg.Unlock()
+	seg.mu.Lock()
+	defer seg.mu.Unlock()
 
 	if seg.Annotations == nil {
 		seg.Annotations = map[string]interface{}{}
@@ -432,8 +432,8 @@ func (seg *Segment) AddAnnotation(key string, value interface{}) error {
 
 // AddMetadata allows adding metadata to the segment.
 func (seg *Segment) AddMetadata(key string, value interface{}) error {
-	seg.Lock()
-	defer seg.Unlock()
+	seg.mu.Lock()
+	defer seg.mu.Unlock()
 
 	if seg.Metadata == nil {
 		seg.Metadata = map[string]map[string]interface{}{}
@@ -447,8 +447,8 @@ func (seg *Segment) AddMetadata(key string, value interface{}) error {
 
 // AddMetadataToNamespace allows adding a namespace into metadata for the segment.
 func (seg *Segment) AddMetadataToNamespace(namespace string, key string, value interface{}) error {
-	seg.Lock()
-	defer seg.Unlock()
+	seg.mu.Lock()
+	defer seg.mu.Unlock()
 
 	if seg.Metadata == nil {
 		seg.Metadata = map[string]map[string]interface{}{}
@@ -462,8 +462,8 @@ func (seg *Segment) AddMetadataToNamespace(namespace string, key string, value i
 
 // AddError allows adding an error to the segment.
 func (seg *Segment) AddError(err error) error {
-	seg.Lock()
-	defer seg.Unlock()
+	seg.mu.Lock()
+	defer seg.mu.Unlock()
 
 	seg.addError(err)
 

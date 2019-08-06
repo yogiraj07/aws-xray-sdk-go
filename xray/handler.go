@@ -120,7 +120,7 @@ func Handler(sn SegmentNamer, h http.Handler) http.Handler {
 }
 
 func httpTrace(seg *Segment, h http.Handler, w http.ResponseWriter, r *http.Request, traceHeader *header.Header) {
-	seg.Lock()
+	seg.mu.Lock()
 
 	scheme := "https://"
 	if r.TLS == nil {
@@ -156,13 +156,13 @@ func httpTrace(seg *Segment, h http.Handler, w http.ResponseWriter, r *http.Requ
 	}
 
 	w.Header().Set(TraceIDHeaderKey, respHeader.String())
-	seg.Unlock()
+	seg.mu.Unlock()
 
 	capturer := &responseCapturer{w, 200, 0}
 	resp := capturer.wrappedResponseWriter()
 	h.ServeHTTP(resp, r)
 
-	seg.Lock()
+	seg.mu.Lock()
 	seg.GetHTTP().GetResponse().Status = capturer.status
 	seg.GetHTTP().GetResponse().ContentLength, _ = strconv.Atoi(capturer.Header().Get("Content-Length"))
 
@@ -175,7 +175,7 @@ func httpTrace(seg *Segment, h http.Handler, w http.ResponseWriter, r *http.Requ
 	if capturer.status >= 500 && capturer.status < 600 {
 		seg.Fault = true
 	}
-	seg.Unlock()
+	seg.mu.Unlock()
 	seg.Close(nil)
 }
 

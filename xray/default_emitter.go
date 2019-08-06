@@ -106,12 +106,12 @@ func packSegments(seg *Segment, outSegments [][]byte) [][]byte {
 	}
 
 	for _, s := range seg.rawSubsegments {
-		s.Lock()
+		s.mu.Lock()
 		outSegments = packSegments(s, outSegments)
 		if b := trimSubsegment(s); b != nil {
 			seg.Subsegments = append(seg.Subsegments, b)
 		}
-		s.Unlock()
+		s.mu.Unlock()
 	}
 	if seg.isOrphan() {
 		if b := trimSubsegment(seg); b != nil {

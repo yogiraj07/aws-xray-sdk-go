@@ -159,7 +159,7 @@ func (db *DB) populate(ctx context.Context, query string) {
 		return
 	}
 
-	seg.Lock()
+	seg.mu.Lock()
 	seg.Namespace = "remote"
 	seg.GetSQL().ConnectionString = db.connectionString
 	seg.GetSQL().URL = db.url
@@ -168,7 +168,7 @@ func (db *DB) populate(ctx context.Context, query string) {
 	seg.GetSQL().DriverVersion = db.driverVersion
 	seg.GetSQL().User = db.user
 	seg.GetSQL().SanitizedQuery = query
-	seg.Unlock()
+	seg.mu.Unlock()
 }
 
 // Tx copies the interface of sql.Tx but adds X-Ray tracing.
@@ -205,9 +205,9 @@ func (stmt *Stmt) populate(ctx context.Context, query string) {
 		return
 	}
 
-	seg.Lock()
+	seg.mu.Lock()
 	seg.GetSQL().Preparation = "statement"
-	seg.Unlock()
+	seg.mu.Unlock()
 }
 
 func postgresDetector(db *DB) error {

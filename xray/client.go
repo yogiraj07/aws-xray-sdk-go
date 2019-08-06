@@ -77,7 +77,7 @@ func (rt *roundtripper) RoundTrip(r *http.Request) (*http.Response, error) {
 		}
 		r = r.WithContext(httptrace.WithClientTrace(ctx, ct.httpTrace))
 
-		seg.Lock()
+		seg.mu.Lock()
 
 		if isEmptyHost {
 			seg.Namespace = ""
@@ -89,12 +89,12 @@ func (rt *roundtripper) RoundTrip(r *http.Request) (*http.Response, error) {
 		seg.GetHTTP().GetRequest().URL = r.URL.String()
 
 		r.Header.Set(TraceIDHeaderKey, seg.DownstreamHeader().String())
-		seg.Unlock()
+		seg.mu.Unlock()
 
 		resp, err = rt.Base.RoundTrip(r)
 
 		if resp != nil {
-			seg.Lock()
+			seg.mu.Lock()
 			seg.GetHTTP().GetResponse().Status = resp.StatusCode
 			seg.GetHTTP().GetResponse().ContentLength, _ = strconv.Atoi(resp.Header.Get("Content-Length"))
 
@@ -107,7 +107,7 @@ func (rt *roundtripper) RoundTrip(r *http.Request) (*http.Response, error) {
 			if resp.StatusCode >= 500 && resp.StatusCode < 600 {
 				seg.Fault = true
 			}
-			seg.Unlock()
+			seg.mu.Unlock()
 		}
 		if err != nil {
 			ct.subsegments.GotConn(nil, err)
